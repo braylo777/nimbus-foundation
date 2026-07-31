@@ -1,0 +1,38 @@
+# Cloudflare Workers / wrangler
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+
+# Secrets — never committed. Wrangler secrets are set via `wrangler secret put`,
+# referenced by name in wrangler.toml, and their values live only in Cloudflare.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local D1 / SQLite state. The Delete Act requires real deletion (NF-WP-1 §9.5);
+# a committed database snapshot would be an undeletable copy of deletable data.
+*.sqlite
+*.sqlite3
+*.db
+d1-local/
+
+# M0 study output — regenerate from vPIC rather than committing decoded VIN data.
+m0-vin-yield/out/
+*.vin-yield.json
+
+# Quarantined Solidity build artifacts (layer5-deferred/, not part of V1)
+layer5-deferred/out/
+layer5-deferred/cache/
+layer5-deferred/lib/
+layer5-deferred/broadcast/
+
+# Superseded TypeScript broker (_superseded/, not part of V1)
+_superseded/**/node_modules/
+_superseded/**/dist/
+
+# macOS
+.DS_Store
+._*

@@ -1,0 +1,323 @@
+{
+  "format": "nf5-vectors/1",
+  "generated_for": "nf2-grant/1",
+  "note": "Signatures are Ed25519 over the JCS (RFC 8785) canonicalisation of the grant with the `signature` key omitted, UTF-8 encoded. Public keys and signatures are base64url raw bytes. A conformant implementation must reach the same verdict as `expected` for each vector without consulting this repository.",
+  "constants": {
+    "schema_version": "nf2-grant/1",
+    "grant_keys": [
+      "v",
+      "grant_id",
+      "vehicle_pseudonym",
+      "fields",
+      "purpose",
+      "issued_at",
+      "expires_at",
+      "counterparty_class",
+      "counterparty_key",
+      "revocation_key_id",
+      "delegation_depth",
+      "parent_grant_id",
+      "renewal_of",
+      "signature"
+    ],
+    "max_grant_duration_s": 3888000,
+    "max_delegation_depth": 2
+  },
+  "staleness": {
+    "rule": "honour iff 0 <= (now - derived_at) <= max_age_s",
+    "default_max_decision_age_s": 60,
+    "max_permitted_decision_age_s": 300,
+    "cases": [
+      {
+        "derived_at": 1800000000,
+        "now": 1800000000,
+        "max_age_s": 30,
+        "expected": "honour"
+      },
+      {
+        "derived_at": 1800000000,
+        "now": 1800000029,
+        "max_age_s": 30,
+        "expected": "honour"
+      },
+      {
+        "derived_at": 1800000000,
+        "now": 1800000030,
+        "max_age_s": 30,
+        "expected": "honour"
+      },
+      {
+        "derived_at": 1800000000,
+        "now": 1800000031,
+        "max_age_s": 30,
+        "expected": "re-derive"
+      },
+      {
+        "derived_at": 1800000000,
+        "now": 1799999999,
+        "max_age_s": 30,
+        "expected": "re-derive"
+      }
+    ]
+  },
+  "vectors": [
+    {
+      "id": "GC-VALID-ROOT",
+      "description": "A well-formed root grant signed by the owner.",
+      "group": "GC",
+      "expected": "valid",
+      "signer_public_key": "FwWRzFcZy_a97REGntiyY8Wej9WOx49TiA_GXE7Iqds",
+      "grant": {
+        "v": "nf2-grant/1",
+        "grant_id": "xWlxicSQQG9jOvt1T__4oQ",
+        "vehicle_pseudonym": {
+          "value": "05VhJmFs2Ncrd_5EO_j7cbJ3pUq0TGdRJ7FZdKAE80Y",
+          "epoch": 0,
+          "audience": "insurer",
+          "derivation": "nf2-pseudonym:v1"
+        },
+        "fields": [
+          "state_of_charge_pct",
+          "state_of_health_pct"
+        ],
+        "purpose": "dppa-2721b-6",
+        "issued_at": 1800000000,
+        "expires_at": 1800604800,
+        "counterparty_class": "insurer",
+        "counterparty_key": "54xXMg1We9DWQACCOgBk2422J4Ml1OjpWKGSjafzoN8",
+        "revocation_key_id": "ts6lV9_yJFjGQDRm9D13sLIUQ_QXltFomtBfjLmUSyI",
+        "delegation_depth": 0,
+        "parent_grant_id": null,
+        "renewal_of": null,
+        "signature": "kx3Y_klvZJzxaQl7WJF0qlZWEqh8-XbKTOpZszHvazI8azbbZSNaq8KFukATtwlqRVybvBJuAQ76d8C_ZqunDQ"
+      },
+      "grant_commitment": "i1t8R2i8htKQXMnUPsac9Qt3RitU3vdkUMgFQdA0DOk"
+    },
+    {
+      "id": "GC-TAMPER-FIELDS",
+      "description": "The signed grant with an extra field appended after signing. The signature is unchanged.",
+      "group": "GC",
+      "expected": "invalid",
+      "reason": "signature does not cover the widened field set",
+      "signer_public_key": "FwWRzFcZy_a97REGntiyY8Wej9WOx49TiA_GXE7Iqds",
+      "grant": {
+        "v": "nf2-grant/1",
+        "grant_id": "xWlxicSQQG9jOvt1T__4oQ",
+        "vehicle_pseudonym": {
+          "value": "05VhJmFs2Ncrd_5EO_j7cbJ3pUq0TGdRJ7FZdKAE80Y",
+          "epoch": 0,
+          "audience": "insurer",
+          "derivation": "nf2-pseudonym:v1"
+        },
+        "fields": [
+          "odometer_km",
+          "state_of_charge_pct",
+          "state_of_health_pct"
+        ],
+        "purpose": "dppa-2721b-6",
+        "issued_at": 1800000000,
+        "expires_at": 1800604800,
+        "counterparty_class": "insurer",
+        "counterparty_key": "54xXMg1We9DWQACCOgBk2422J4Ml1OjpWKGSjafzoN8",
+        "revocation_key_id": "ts6lV9_yJFjGQDRm9D13sLIUQ_QXltFomtBfjLmUSyI",
+        "delegation_depth": 0,
+        "parent_grant_id": null,
+        "renewal_of": null,
+        "signature": "kx3Y_klvZJzxaQl7WJF0qlZWEqh8-XbKTOpZszHvazI8azbbZSNaq8KFukATtwlqRVybvBJuAQ76d8C_ZqunDQ"
+      }
+    },
+    {
+      "id": "GC-TAMPER-EXPIRY",
+      "description": "The signed grant with its expiry extended by a day after signing.",
+      "group": "GC",
+      "expected": "invalid",
+      "reason": "signature does not cover the extended expiry",
+      "signer_public_key": "FwWRzFcZy_a97REGntiyY8Wej9WOx49TiA_GXE7Iqds",
+      "grant": {
+        "v": "nf2-grant/1",
+        "grant_id": "xWlxicSQQG9jOvt1T__4oQ",
+        "vehicle_pseudonym": {
+          "value": "05VhJmFs2Ncrd_5EO_j7cbJ3pUq0TGdRJ7FZdKAE80Y",
+          "epoch": 0,
+          "audience": "insurer",
+          "derivation": "nf2-pseudonym:v1"
+        },
+        "fields": [
+          "state_of_charge_pct",
+          "state_of_health_pct"
+        ],
+        "purpose": "dppa-2721b-6",
+        "issued_at": 1800000000,
+        "expires_at": 1800691200,
+        "counterparty_class": "insurer",
+        "counterparty_key": "54xXMg1We9DWQACCOgBk2422J4Ml1OjpWKGSjafzoN8",
+        "revocation_key_id": "ts6lV9_yJFjGQDRm9D13sLIUQ_QXltFomtBfjLmUSyI",
+        "delegation_depth": 0,
+        "parent_grant_id": null,
+        "renewal_of": null,
+        "signature": "kx3Y_klvZJzxaQl7WJF0qlZWEqh8-XbKTOpZszHvazI8azbbZSNaq8KFukATtwlqRVybvBJuAQ76d8C_ZqunDQ"
+      }
+    },
+    {
+      "id": "GC-WRONG-SIGNER",
+      "description": "A valid grant checked against the counterparty key instead of the owner key.",
+      "group": "GC",
+      "expected": "invalid",
+      "reason": "signature verifies only under the owner key that produced it",
+      "signer_public_key": "54xXMg1We9DWQACCOgBk2422J4Ml1OjpWKGSjafzoN8",
+      "grant": {
+        "v": "nf2-grant/1",
+        "grant_id": "xWlxicSQQG9jOvt1T__4oQ",
+        "vehicle_pseudonym": {
+          "value": "05VhJmFs2Ncrd_5EO_j7cbJ3pUq0TGdRJ7FZdKAE80Y",
+          "epoch": 0,
+          "audience": "insurer",
+          "derivation": "nf2-pseudonym:v1"
+        },
+        "fields": [
+          "state_of_charge_pct",
+          "state_of_health_pct"
+        ],
+        "purpose": "dppa-2721b-6",
+        "issued_at": 1800000000,
+        "expires_at": 1800604800,
+        "counterparty_class": "insurer",
+        "counterparty_key": "54xXMg1We9DWQACCOgBk2422J4Ml1OjpWKGSjafzoN8",
+        "revocation_key_id": "ts6lV9_yJFjGQDRm9D13sLIUQ_QXltFomtBfjLmUSyI",
+        "delegation_depth": 0,
+        "parent_grant_id": null,
+        "renewal_of": null,
+        "signature": "kx3Y_klvZJzxaQl7WJF0qlZWEqh8-XbKTOpZszHvazI8azbbZSNaq8KFukATtwlqRVybvBJuAQ76d8C_ZqunDQ"
+      }
+    },
+    {
+      "id": "DD-ROOT-DEPTH-2",
+      "description": "A root grant authorising delegation to depth 2.",
+      "group": "DD",
+      "expected": "valid",
+      "signer_public_key": "FwWRzFcZy_a97REGntiyY8Wej9WOx49TiA_GXE7Iqds",
+      "grant": {
+        "v": "nf2-grant/1",
+        "grant_id": "A9vf640F88j2js83adB1tA",
+        "vehicle_pseudonym": {
+          "value": "tzVQbwW3Zb81ieVQkJi7zW1Ii-y2g8W4gWaKREEpytc",
+          "epoch": 0,
+          "audience": "fleet-operator",
+          "derivation": "nf2-pseudonym:v1"
+        },
+        "fields": [
+          "engine_hours",
+          "odometer_km"
+        ],
+        "purpose": "dppa-2721b-2",
+        "issued_at": 1800000000,
+        "expires_at": 1802592000,
+        "counterparty_class": "fleet-operator",
+        "counterparty_key": "9Q506-ey54YC0wkz7JxhF9wlDdgJPVMeAB6EyFkSDnY",
+        "revocation_key_id": "ts6lV9_yJFjGQDRm9D13sLIUQ_QXltFomtBfjLmUSyI",
+        "delegation_depth": 2,
+        "parent_grant_id": null,
+        "renewal_of": null,
+        "signature": "JdZnrSN7JNAyyNNvFdKo6vaWtglhUkvhfpIC3PU7-2DpQHjiwJ62lAwrh9xkVL7yUmzD5mmQIWTJozyPHdrNAQ"
+      }
+    },
+    {
+      "id": "DD-SUB-DEPTH-1",
+      "description": "A sub-grant minted from DD-ROOT-DEPTH-2, signed by the delegator, depth decremented.",
+      "group": "DD",
+      "expected": "valid",
+      "signer_public_key": "9Q506-ey54YC0wkz7JxhF9wlDdgJPVMeAB6EyFkSDnY",
+      "parent_id": "DD-ROOT-DEPTH-2",
+      "grant": {
+        "v": "nf2-grant/1",
+        "grant_id": "zgaIbTaZPCUgH5Wioq14wg",
+        "vehicle_pseudonym": {
+          "value": "tzVQbwW3Zb81ieVQkJi7zW1Ii-y2g8W4gWaKREEpytc",
+          "epoch": 0,
+          "audience": "fleet-operator",
+          "derivation": "nf2-pseudonym:v1"
+        },
+        "fields": [
+          "odometer_km"
+        ],
+        "purpose": "dppa-2721b-2",
+        "issued_at": 1800000000,
+        "expires_at": 1800604800,
+        "counterparty_class": "repair-independent",
+        "counterparty_key": "ImEeygnT0eZnfZoYQogJXPX9xvXpOKk-y3sGTVZn3ME",
+        "revocation_key_id": "ts6lV9_yJFjGQDRm9D13sLIUQ_QXltFomtBfjLmUSyI",
+        "delegation_depth": 1,
+        "parent_grant_id": "A9vf640F88j2js83adB1tA",
+        "renewal_of": null,
+        "signature": "CIhaJ_Zxc_X9hSefYuk-YobrkzcPxABQvJM2R4b0bAV7fQtdw9R_JDXPyn30AbUfMtR9QbeDBkC8N9Q11W_LDA"
+      }
+    },
+    {
+      "id": "DD-LAUNDERED-DEPTH",
+      "description": "The sub-grant with its delegation depth raised after signing — depth laundering.",
+      "group": "DD",
+      "expected": "invalid",
+      "reason": "there is no operation that adds depth; the signature does not cover the raised value",
+      "signer_public_key": "9Q506-ey54YC0wkz7JxhF9wlDdgJPVMeAB6EyFkSDnY",
+      "grant": {
+        "v": "nf2-grant/1",
+        "grant_id": "zgaIbTaZPCUgH5Wioq14wg",
+        "vehicle_pseudonym": {
+          "value": "tzVQbwW3Zb81ieVQkJi7zW1Ii-y2g8W4gWaKREEpytc",
+          "epoch": 0,
+          "audience": "fleet-operator",
+          "derivation": "nf2-pseudonym:v1"
+        },
+        "fields": [
+          "odometer_km"
+        ],
+        "purpose": "dppa-2721b-2",
+        "issued_at": 1800000000,
+        "expires_at": 1800604800,
+        "counterparty_class": "repair-independent",
+        "counterparty_key": "ImEeygnT0eZnfZoYQogJXPX9xvXpOKk-y3sGTVZn3ME",
+        "revocation_key_id": "ts6lV9_yJFjGQDRm9D13sLIUQ_QXltFomtBfjLmUSyI",
+        "delegation_depth": 6,
+        "parent_grant_id": "A9vf640F88j2js83adB1tA",
+        "renewal_of": null,
+        "signature": "CIhaJ_Zxc_X9hSefYuk-YobrkzcPxABQvJM2R4b0bAV7fQtdw9R_JDXPyn30AbUfMtR9QbeDBkC8N9Q11W_LDA"
+      }
+    },
+    {
+      "id": "RV-REVOKE-GRANT",
+      "description": "A grant-scope revocation signed by the OWNER-held revocation key.",
+      "group": "RV",
+      "expected": "valid",
+      "signer_public_key": "DKg2a42diKRSTkrOOmtSL3FclMg9zwlW4LMn_DkYb1c",
+      "record": {
+        "v": "nf4-revocation/1",
+        "scope": "grant",
+        "target": "i1t8R2i8htKQXMnUPsac9Qt3RitU3vdkUMgFQdA0DOk",
+        "revocation_key": "DKg2a42diKRSTkrOOmtSL3FclMg9zwlW4LMn_DkYb1c",
+        "issued_at": 1800003600,
+        "effective_from": null,
+        "reason": "owner_withdrew",
+        "signature": "JB8otWX0to8q-QY4rorP4VLO4o8jWREb19pZ_PJm32FCzfz-XFB4jlsHSecY_krDnG7fLvJograwKqpAJTOPAQ"
+      },
+      "revokes": "GC-VALID-ROOT"
+    },
+    {
+      "id": "RV-RETARGETED",
+      "description": "The same revocation with its target rewritten after signing — pointing it at another grant.",
+      "group": "RV",
+      "expected": "invalid",
+      "reason": "the signature covers the target; a revocation cannot be redirected",
+      "signer_public_key": "DKg2a42diKRSTkrOOmtSL3FclMg9zwlW4LMn_DkYb1c",
+      "record": {
+        "v": "nf4-revocation/1",
+        "scope": "grant",
+        "target": "i1t8R2i8htKQXMnUPsac9Qt3RitU3vdkUMgFQdAdead",
+        "revocation_key": "DKg2a42diKRSTkrOOmtSL3FclMg9zwlW4LMn_DkYb1c",
+        "issued_at": 1800003600,
+        "effective_from": null,
+        "reason": "owner_withdrew",
+        "signature": "JB8otWX0to8q-QY4rorP4VLO4o8jWREb19pZ_PJm32FCzfz-XFB4jlsHSecY_krDnG7fLvJograwKqpAJTOPAQ"
+      }
+    }
+  ]
+}

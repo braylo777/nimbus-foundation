@@ -1,0 +1,41 @@
+{
+  "manifest_version": "nf5-hook-manifest/1",
+  "spec": "NF-5 §4.5 (CH-1..CH-4)",
+  "_comment": [
+    "The conformance-hook manifest. NF-5 §4.5 requires that the conformance interface live",
+    "outside the production import graph, that the delta between the conformance build and the",
+    "production build be ENUMERATED rather than unknown, and that hook routes 404 on the",
+    "production digest.",
+    "",
+    "This build declares one hook module: conformance/hook.js. The dependency arrow points one",
+    "way — the hook imports the Worker's default export; the Worker imports nothing under",
+    "conformance/. That is CH-1, and it is decidable by reading the two import lists rather than",
+    "by trusting a comment. hooks.test.js walks the production graph and asserts it.",
+    "",
+    "HONEST ACCOUNTING (NF-5 §4.5). Because a hook module exists, the audited build is NOT",
+    "byte-identical to the deployed build, and the digest argument in §8.2 is weakened exactly",
+    "as §4.5 says it is. No amount of process removes that. What CH-3 buys is that the delta is",
+    "one file, enumerated here, and reviewable in full. An earlier version of this manifest",
+    "claimed no hook existed and that the builds were identical; that claim was false, and the",
+    "CH-3 assertion that should have caught it computed the conformance file set as",
+    "production-union-declared, which is trivially equal to production when nothing is declared.",
+    "hooks.test.js now DISCOVERS hook-shaped modules under conformance/ and fails when one is",
+    "not declared here, so an undeclared hook is a test failure rather than a silent omission."
+  ],
+  "production_entry": "broker/src/index.js",
+  "hook_modules": ["conformance/hook.js"],
+  "hook_routes": [],
+  "digest": {
+    "algorithm": "SHA-256",
+    "production": null,
+    "conformance": null,
+    "_comment": [
+      "Null means 'not pinned in-tree'. Pinning a digest in a source file edited by the same",
+      "commit that pins it is a staleness trap, so the digests are computed at audit time by",
+      "hooks.test.js and reported. CH-3's reviewable-diff requirement is enforced structurally:",
+      "the test asserts the conformance file set minus the production file set is EXACTLY",
+      "hook_modules, and that no undeclared hook-shaped module exists. When a release pins these",
+      "values, the test verifies them instead of reporting them."
+    ]
+  }
+}

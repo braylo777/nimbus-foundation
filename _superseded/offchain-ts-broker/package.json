@@ -1,0 +1,26 @@
+{
+  "name": "@catallaxy/broker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Consent broker and vehicle twin for the Catallaxy of Machines IoV market",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "broker": "tsx src/broker.ts",
+    "twin": "tsx src/twin.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "fastify": "^4.26.2",
+    "jose": "^5.2.4",
+    "viem": "^2.9.9"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "tsx": "^4.7.2",
+    "typescript": "^5.4.5"
+  }
+}

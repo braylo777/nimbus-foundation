@@ -1,0 +1,75 @@
+# M0 — VIN-yield study Worker (NF-WP-1 §11, §14 M0, §15 rec 1).
+#
+# Run wrangler FROM THIS DIRECTORY. `main` is relative to this file, and src/index.js
+# imports the canonical spine across a directory boundary (../../broker/src/fields.js,
+# ../../broker/src/vin.js). Wrangler follows those relative imports; nothing is copied,
+# because a forked copy of the field vocabulary would let the study measure something the
+# broker does not implement.
+#
+# No npm, no build step, no dependencies (NF-WP-1 §14). Web-standard APIs only:
+# fetch, URL, URLSearchParams, AbortSignal.timeout, crypto.subtle, crypto.randomUUID,
+# TextEncoder. Deliberately NO `nodejs_compat` — needing it would mean something
+# non-standard crept in.
+
+name = "nf-m0-vin-yield"
+main = "src/index.js"
+compatibility_date = "2026-07-01"
+
+# Logs are the only record of a run that failed midway. Without them a truncated study
+# looks identical to a clean one.
+[observability]
+enabled = true
+
+# --------------------------------------------------------------------------------------
+# D1 — the mutable, deletable study store (NF-WP-1 §9.5).
+#
+# The study keys results by VIN, which is correct HERE and only here: D1 is the mutable
+# store the architecture reserves for identifiers, and DELETE /sample/<id> erases a whole
+# sample so the 45-day Delete Act cadence is a real operation rather than a promise. A
+# VIN must never reach a commitment or a ledger.
+#
+#   wrangler d1 create nf-m0-vin-yield
+#   # paste the returned id below, then apply the schema the Worker publishes:
+#   wrangler d1 execute nf-m0-vin-yield --remote --file=<(curl -s "$WORKER_URL/schema.sql")
+#
+# The Worker also bootstraps the schema idempotently on first use, so a fresh database
+# does not 500 — but applying it deliberately is preferred.
+# --------------------------------------------------------------------------------------
+[[d1_databases]]
+binding = "DB"
+database_name = "nf-m0-vin-yield"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+[vars]
+# NHTSA vPIC: public, no key, no registration (NF-WP-1 §11). Populated from manufacturer
+# submissions under 49 C.F.R. Part 565. No credential belongs in this Worker, and there
+# is no secret to leak by pointing it at a local mock for tests.
+VPIC_BASE = "https://vpic.nhtsa.dot.gov/api/vehicles"
+
+# A slow vPIC must not consume the whole run budget. On timeout the affected VINs are
+# recorded as unreached and the run is marked truncated rather than counted as zero
+# coverage — an outage must never be reportable as a finding.
+VPIC_TIMEOUT_MS = "8000"
+
+# Bounded retry with full-jitter backoff, honouring Retry-After. Bounded, because an
+# unbounded retry against a free public service is an attack on it.
+VPIC_MAX_ATTEMPTS = "3"
+
+# vPIC responses are deterministic for a given VIN, so re-running a sample costs nothing
+# after the first pass. 45 days both satisfies the ">= 30 days" requirement and lines the
+# cache lifetime up with the §9.5 erasure cadence, so a stale row and a purgeable row are
+# the same row.
+CACHE_TTL_S = "3888000"
+
+# --------------------------------------------------------------------------------------
+# Secret, set out of band — never in this file:
+#
+#   wrangler secret put M0_ADMIN_TOKEN
+#
+# Gates POST /decode and DELETE /sample/<id>. Absent, mutation is refused entirely: the
+# Worker fails closed rather than defaulting open, because an unauthenticated /decode is
+# both an open proxy onto a free public service and an open writer into D1.
+#
+# GET /health, /schema.sql, /vocabulary and /report stay open. /report returns aggregates
+# and per-field rates only — no VIN, no per-vehicle row, no path from a VIN to anything.
+# --------------------------------------------------------------------------------------

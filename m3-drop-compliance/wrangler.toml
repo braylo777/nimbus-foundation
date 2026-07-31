@@ -1,0 +1,97 @@
+# M3 — Delete Act / DROP compliance Worker.
+#
+# Nimbus Foundation NF-WP-1 §9.5, §14 (M3), §15 rec. 2.
+#
+# Stack constraint (§14): Cloudflare Workers, D1, plain ES modules. No npm, no build step,
+# no third-party dependencies. Nothing in src/ imports anything that is not a Web standard
+# API or a file in this repository.
+
+name = "nimbus-drop-compliance"
+main = "src/index.js"
+compatibility_date = "2026-07-01"
+workers_dev = false
+
+# ---------------------------------------------------------------------------------------
+# CRON — daily, against a 45-day statutory floor.
+#
+# THE MARGIN IS THE POINT. The Delete Act requires accessing DROP at least every 45 days
+# (CLOCK A1, NF-WP-1 §9.5). A 45-day cron would satisfy that arithmetic and fail the first
+# time a run errors, because there is no second attempt inside the window: one expired
+# credential, one D1 incident, one bad deploy, and the obligation is breached with no
+# opportunity to notice. A deadline schedule with no margin is not a schedule, it is a
+# single point of failure with a statutory penalty attached.
+#
+# Daily gives 45 independent attempts before the floor is reached, and the code aims at a
+# tighter target still: INTERNAL_ACCESS_CADENCE_S in src/clocks.js is 7 days, so six
+# consecutive weekly failures still leave three days of statutory room. Between the two,
+# a total outage has to run for a month and a half — while the daily `access.failed`
+# breach-severity audit events accumulate on /compliance/status — before the deadline is
+# actually missed.
+#
+# The same invocation also advances matching, fan-out, deletion completion and the
+# 45-day status report (CLOCK A2) and 90-day completion (CLOCK B) deadlines, so a daily
+# cadence also bounds how stale any per-batch deadline evaluation can be to 24 hours.
+#
+# 03:17 UTC is 20:17 PDT / 19:17 PST the previous evening — off-peak for a California
+# regulator's interface — and the odd minute keeps this Worker out of the top-of-hour
+# thundering herd. Overlapping runs are prevented by the `run_lease` row rather than by
+# the schedule, so tightening this cadence later needs no other change.
+[triggers]
+crons = ["17 3 * * *"]
+
+# ---------------------------------------------------------------------------------------
+# D1 — the mutable, deletable store (Refusal 2, §9.5).
+#
+# Everything M3 touches is deletion-request material. It lives in D1 precisely because a
+# standing 45-day retrieval cadence plus CCPA erasure rights cannot be reconciled with an
+# immutable ledger; the only value in the schema eligible to become an on-chain integrity
+# commitment is audit_file.head_digest.
+#
+# database_id is a placeholder on purpose. Create the database and paste the real id:
+#   wrangler d1 create nimbus-drop-compliance
+#   wrangler d1 execute nimbus-drop-compliance --remote --file=./schema.sql
+[[d1_databases]]
+binding = "DB"
+database_name = "nimbus-drop-compliance"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+[observability]
+enabled = true
+
+[vars]
+# Staging retention for retrieved request rows, in days. Intentionally UNSET: the period
+# trades audit-defence value against the data-minimisation duty that motivates the whole
+# regime, and that is a decision for counsel, not a default in a config file. Unset means
+# the purge step is a no-op and rows are retained.
+# REQUEST_STAGING_RETENTION_DAYS = "..."
+
+# NO DROP ENDPOINT IS CONFIGURED HERE, AND NONE MAY BE INVENTED.
+#
+# The DROP API contract is not in NF-WP-1: not the base URL, not the auth scheme, not the
+# request schema, not the enumerated status values, not whether retrieval is pull or push.
+# src/index.js therefore ships a documented stub adapter that REFUSES rather than returning
+# an empty result set, so an unconfigured deployment records a breach-severity failure
+# instead of quietly reporting perfect compliance to nobody.
+#
+# Before launch, confirm every item on the adapter checklist in src/index.js against CPPA's
+# published DROP interface, implement the adapter, and bind it. Then add the base URL here
+# as a plain var (it is not a secret) and the credential as a secret (below).
+# DROP_API_BASE = "<confirmed against CPPA's published DROP interface — do not guess>"
+
+# ---------------------------------------------------------------------------------------
+# SECRETS — set with `wrangler secret put`, never in this file (§14: no keys in the repo).
+#
+#   COMPLIANCE_ADMIN_TOKEN  >= 32 chars. Bearer token for the /compliance/* surface. If it
+#                           is unset the whole surface returns 503 rather than opening.
+#   SUBJECT_MATCH_KEY       >= 32 chars. HMAC key for subject digests. An unkeyed digest of
+#                           an email address is a rainbow-table lookup, which would turn the
+#                           suppression list into a queryable roster of everyone who asked
+#                           to be deleted — a new privacy harm created by the privacy
+#                           machinery. Rotating this key invalidates existing digests and
+#                           requires a documented re-derivation plan.
+#   DROP_API_TOKEN          the DROP credential, once its type is confirmed.
+#
+# Downstream recipient endpoints are also secrets, referenced BY NAME from
+# downstream_recipient.endpoint_ref so that a compromised database row cannot redirect a
+# deletion directive to an attacker's collector:
+#   DOWNSTREAM_ENDPOINT_<LABEL>

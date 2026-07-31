@@ -1,0 +1,336 @@
+# CarNimbus consent broker — Cloudflare Workers configuration.
+#
+# Nimbus Foundation NF-WP-1 §14 (M1), Layer 3.
+#
+# THIS WORKER IS OPERATED BY CARNIMBUS, INC., NOT BY THE NIMBUS FOUNDATION.
+# Refusal 3 (§10.1) forbids the Foundation from operating a market it also governs. The
+# Foundation publishes NF-2/NF-3/NF-4 and certifies conformance; it does not run a broker,
+# does not hold consent grants, and does not appear in any binding below. If this file ever
+# ends up deployed under a Foundation account, the charter has been broken by a deploy
+# script.
+
+name = "nimbus-consent-broker"
+main = "src/index.js"
+
+# Pinned rather than floating. The runtime behaviours this Worker depends on — WebCrypto
+# Ed25519 under the standard `Ed25519` name, streaming request bodies, `caches.default` —
+# are all gated by compatibility date, and a floating date means a signature path can change
+# semantics on a Tuesday without a deploy.
+compatibility_date = "2026-07-01"
+
+# DELIBERATELY EMPTY. `nodejs_compat` is NOT enabled: nothing here may reach for a Node
+# built-in. The BINDING stack constraint (§14) is web-standard APIs only, and the flag is the
+# single easiest way for a future edit to smuggle in a dependency.
+compatibility_flags = []
+
+# NO [build] SECTION, DELIBERATELY.
+#
+# There is no bundler, no transpiler, no npm install and no generated output. `src/*.js` are
+# plain ES modules that the runtime loads as written, so the code that is reviewed is byte-for-
+# byte the code that runs. That property is worth more here than any build-time convenience:
+# a consent broker whose deployed artifact is the output of a toolchain has a supply chain,
+# and a supply chain is an unaudited co-signer on every grant it issues.
+#
+# If someone adds a [build] section, they have changed the trust model, not the tooling.
+
+# account_id is INTENTIONALLY ABSENT.
+#
+# Never commit one. It is not a secret in the cryptographic sense, but it is an operator
+# identifier that belongs in the environment, not in a repository that will be read by
+# conformance implementers who are not CarNimbus:
+#
+#   export CLOUDFLARE_ACCOUNT_ID=...
+#   npx wrangler deploy        # wrangler reads it from the environment
+
+workers_dev = false            # no *.workers.dev hostname; routes are configured per env below
+
+[observability]
+enabled = true
+head_sampling_rate = 1.0       # sample nothing away: the audit trail is the point
+
+# ---------------------------------------------------------------------------------
+# D1 — the mutable, deletable store. Refusal 2 (§9.5) lives here.
+# ---------------------------------------------------------------------------------
+# Every identifier, payload and linkage in this system is in D1 precisely BECAUSE D1 rows can
+# be destroyed. A standing 45-day Delete Act cadence plus CCPA erasure rights cannot be
+# reconciled with an immutable ledger, so the ledger gets hashes and D1 gets everything else.
+#
+#   npx wrangler d1 create nimbus-broker
+#   npx wrangler d1 execute nimbus-broker --local  --file=./schema.sql
+#   npx wrangler d1 execute nimbus-broker --remote --file=./schema.sql
+#
+# database_id below is a PLACEHOLDER. Replace it with the id printed by `d1 create` in your
+# own account; do not commit a real one back.
+[[d1_databases]]
+binding = "DB"
+database_name = "nimbus-broker"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+
+# ---------------------------------------------------------------------------------
+# KV — non-authoritative cache only. ONE JOB.
+# ---------------------------------------------------------------------------------
+# Used for exactly one thing: caching the identity provider's PUBLIC JWKS. Every property KV
+# has is harmless there — the key set is public, identical for every request, and tolerant of
+# a stale read, because the worst case is briefly missing a freshly rotated key and the
+# fallback is a live fetch.
+#
+# CORRECTED FROM THE EARLIER TEXT HERE, which claimed KV held NF-3 resolution records and the
+# rate-limit fallback. Neither is true of the code as built, and both would have been wrong:
+#   * nf3-resolve.js owns its own two-tier cache — `caches.default` per colo, then the
+#     `nf3_resolution_cache` table in D1 — because it RE-VERIFIES every cache hit against the
+#     current trust anchors. Routing that through KV would have added a third tier with a
+#     propagation window in front of a signature check.
+#   * The rate-limit fallback is an in-isolate window (src/index.js says so, and says it is
+#     advisory). A KV-backed limiter whose reads lag by up to a minute does not limit
+#     anything inside the window it is supposed to enforce.
+#
+# NEVER PUT IN KV: pseudonym salts, wrapped signing keys, grant payloads, revocation state,
+# replay nonces. KV's read-after-write window is up to ~60s, which for revocation state means
+# a revoked grant verifies for a minute, and for nonces means a replay inside the window
+# succeeds. Those live in D1, whose primary is authoritative.
+#
+#   npx wrangler kv namespace create CACHE
+[[kv_namespaces]]
+binding = "CACHE"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
+# ---------------------------------------------------------------------------------
+# Rate limiting — Cloudflare's native binding, no package.
+# ---------------------------------------------------------------------------------
+# `type = "ratelimit"` is a platform binding: `await env.RATE_LIMITER.limit({ key })`. It is
+# under [[unsafe.bindings]] because that is where Cloudflare exposes it, not because it does
+# anything unsafe.
+#
+# HONEST CAVEAT, and src/index.js repeats it at the call site: the limiter counts per
+# location, not globally, so the effective ceiling is roughly (limit x colos). It shapes
+# traffic and stops a single client hammering one endpoint; it is not a quota. An exact
+# global counter needs a Durable Object, deliberately not added here (see the report).
+#
+# `period` accepts only 10 or 60.
+[[unsafe.bindings]]
+name = "RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 120, period = 60 }
+
+# A second, tighter namespace for the unauthenticated resolution endpoint, which is the one
+# an enumerator would walk. Separate namespace so resolution traffic cannot exhaust the
+# budget that authenticated grant traffic depends on.
+[[unsafe.bindings]]
+name = "RATE_LIMITER_RESOLVE"
+type = "ratelimit"
+namespace_id = "1002"
+simple = { limit = 60, period = 60 }
+
+# ---------------------------------------------------------------------------------
+# Non-secret configuration.
+# ---------------------------------------------------------------------------------
+# Everything here is safe in a public repository. Anything that would not be is a secret and
+# appears only by name in the block below.
+[vars]
+ENVIRONMENT = "development"
+
+# Hard cap on a request body, in bytes. A signed grant is under 2 KiB; 16 KiB leaves room for
+# a delegation registration carrying parent and child without leaving room for an abuse
+# vector. Enforced by counting bytes as they stream, not by trusting Content-Length.
+MAX_REQUEST_BYTES = 16384
+
+# Clock skew tolerated on requester request signatures, seconds. Small on purpose: this is the
+# replay window that the nonce table has to cover.
+AUTH_MAX_SKEW_S = 60
+
+# How long a used nonce is remembered. Must exceed 2 * AUTH_MAX_SKEW_S or the replay window
+# outlives the memory of it.
+NONCE_TTL_S = 300
+
+# NF-3 TRUST ANCHORS. REQUIRED FOR /resolve TO ANSWER AT ALL.
+#
+# Was missing entirely, and its absence was not a missing default: `loadTrustAnchors` reads
+# this variable, and with no usable anchor `resolveVin` REFUSES. There is no unauthenticated
+# resolution mode and no "insecure" state — only authenticated or refused, which is the
+# lesson DNSSEC's optional validation taught over two decades (as long as unvalidated answers
+# are acceptable somewhere, an attacker's job is to make validation fail rather than to forge
+# a signature). So an unset value here is not a degraded resolver; it is a resolver that
+# returns `no_trust_anchor` to everything.
+#
+# JSON object, `{ "<zone id>": { "endpoint": "https://…", "key": "<base64url raw Ed25519>" } }`.
+# Zone ids are `root`, `wmi:<3 chars>`, or `operator:<name>`.
+#
+# PUBLIC, NOT SECRET, and therefore a var: these are verification keys and bootstrap
+# addresses. A verification key confers the ability to detect a lie, not to act. The endpoint
+# is a ROOT HINT in the DNS sense — getting it wrong is a denial of service, never a spoof,
+# because the key is what authenticates the answer, and that asymmetry is precisely why hints
+# can be plain configuration.
+#
+# ANY ZONE MAY BE AN ANCHOR, and that is Refusal 3 expressed in the trust model rather than in
+# the topology: a resolver may be configured with only the WMI zone it cares about and never
+# contact the root. A root every resolver must trust is a licensor of access whatever its
+# bylaws say.
+NF3_TRUST_ANCHORS = "{}"
+
+# Development only: permit http:// and loopback endpoints in NF-3 records. src/index.js gates
+# this on ENVIRONMENT == "development" as well as on the flag, so a stray variable cannot talk
+# a production deployment into an SSRF-shaped resolver. Absent from staging and production
+# below, deliberately.
+NF3_ALLOW_INSECURE_LOOPBACK = "false"
+
+# REMOVED: RESOLUTION_TTL_S.
+#
+# It was a deployment knob for something that is protocol policy. nf3-resolve.js sets TTL
+# FLOORS as well as ceilings (NF3_TTL_POLICY), and the floor is the load-bearing half: a zone
+# — or an operator — that serves ttl 0 forces every resolver in the network to return for
+# every lookup, which is not a performance bug but a centralisation lever hidden inside a
+# protocol whose entire purpose is polycentrism. A variable that could set it to 0 hands that
+# lever to whoever edits this file.
+
+# Fallback rate limit (requests per minute per key) used only when RATE_LIMITER is unbound,
+# e.g. `wrangler dev` without the unsafe binding.
+FALLBACK_RATE_LIMIT_PER_MIN = 120
+
+# Clerk owner-session verification. Both are PUBLIC values — the issuer is a hostname and a
+# JWKS is a set of public keys — so they are vars, not secrets.
+CLERK_ISSUER = "https://REPLACE.clerk.accounts.dev"
+CLERK_JWKS_URL = "https://REPLACE.clerk.accounts.dev/.well-known/jwks.json"
+# Comma-separated allowlist of authorised parties (the `azp` claim). Empty disables the check,
+# which is acceptable only in development.
+CLERK_AUTHORIZED_PARTIES = ""
+
+# Operator identifier recorded in the audit log so a shared D1 can attribute writes.
+OPERATOR_ID = "carnimbus-dev"
+
+# ---------------------------------------------------------------------------------
+# SECRETS — REFERENCED BY NAME ONLY. NO VALUE APPEARS IN THIS FILE, EVER.
+# ---------------------------------------------------------------------------------
+# Set with `wrangler secret put NAME` (or `.dev.vars`, which is gitignored, for local work).
+# Wrangler does not need them declared here; they are listed so a reviewer can see the full
+# secret surface in one place, and so a missing one is a documentation bug rather than a
+# runtime surprise.
+#
+#   VIN_INDEX_KEY
+#     32 bytes, base64url. HMAC key for the blind index over the VIN. The broker stores NO
+#     plaintext VIN at rest (src/index.js, vinIndex()); it stores HMAC(VIN) so it can find a
+#     vehicle when an owner presents the VIN again. Rotating this key orphans every
+#     enrolment — which is a deliberate property, not a hazard: it is a second, coarser
+#     erasure lever that works without touching a row.
+#       node -e "console.log(Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64url'))"
+#
+#   OWNER_KEY_WRAP_KEY
+#     32 bytes, base64url. HKDF input keying material for the AES-GCM key that wraps each
+#     per-(vehicle, audience) owner signing key in D1. A Worker isolate cannot hold a
+#     non-extractable CryptoKey across requests, so custodial issuance requires wrapped key
+#     material at rest; this secret is the only thing standing between a D1 dump and the
+#     ability to mint grants. Compensating controls, all in the design rather than in this
+#     comment: the owner-held revocation key (which the broker never has), the 45-day cap,
+#     per-(vehicle, audience) key separation, and the audit log.
+#
+# NOT NEEDED, DELIBERATELY:
+#   CLERK_SECRET_KEY — owner sessions are verified against Clerk's PUBLIC JWKS with WebCrypto.
+#     A backend API key would let this Worker act as the Clerk application; it only needs to
+#     check a signature, so it only gets what checking a signature requires.
+#   Any OEM credential of any kind — see the hard rule in src/index.js. There is no column,
+#     no binding, and no secret name for one, because the broker never holds one.
+
+# ---------------------------------------------------------------------------------
+# Local development
+# ---------------------------------------------------------------------------------
+#   1. npx wrangler d1 create nimbus-broker            # paste the id above
+#   2. npx wrangler kv namespace create CACHE          # paste the id above
+#   3. npx wrangler d1 execute nimbus-broker --local --file=./schema.sql
+#   4. cat > .dev.vars <<'EOF'                         # gitignored; never commit
+#      VIN_INDEX_KEY=<32 random bytes, base64url>
+#      OWNER_KEY_WRAP_KEY=<32 random bytes, base64url>
+#      EOF
+#   5. npx wrangler dev                                # http://localhost:8787
+#   6. curl -s localhost:8787/healthz
+#      curl -s localhost:8787/resolve/1HGCM82633A004352
+#
+# `wrangler dev --local` runs workerd, the same runtime as production, so the Ed25519
+# feature-detection path in nf2-grant.js exercises the real thing rather than a Node shim.
+#
+# Inspect what erasure actually destroys, against a local database:
+#   npx wrangler d1 execute nimbus-broker --local --command \
+#     "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+#
+# No `[triggers]` / cron is configured. A scheduled handler is a second entry point with its
+# own authorisation story; nonce and audit housekeeping is done opportunistically inside the
+# request path instead (src/index.js, sweepExpiredNonces). Revisit when retention needs a
+# guarantee rather than a tendency.
+
+# ---------------------------------------------------------------------------------
+# Environments
+# ---------------------------------------------------------------------------------
+# Staging and production repeat the bindings deliberately: wrangler does not inherit
+# [[d1_databases]] into named environments, and a silently-inherited database binding is how
+# a staging deploy writes production consent state. Ids stay placeholders in the repository.
+
+[env.staging]
+name = "nimbus-consent-broker-staging"
+
+[env.staging.vars]
+ENVIRONMENT = "staging"
+MAX_REQUEST_BYTES = 16384
+AUTH_MAX_SKEW_S = 60
+NONCE_TTL_S = 300
+NF3_TRUST_ANCHORS = "{}"
+FALLBACK_RATE_LIMIT_PER_MIN = 120
+CLERK_ISSUER = "https://REPLACE-staging.clerk.accounts.dev"
+CLERK_JWKS_URL = "https://REPLACE-staging.clerk.accounts.dev/.well-known/jwks.json"
+CLERK_AUTHORIZED_PARTIES = ""
+OPERATOR_ID = "carnimbus-staging"
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "nimbus-broker-staging"
+database_id = "REPLACE_WITH_YOUR_STAGING_D1_DATABASE_ID"
+
+[[env.staging.kv_namespaces]]
+binding = "CACHE"
+id = "REPLACE_WITH_YOUR_STAGING_KV_NAMESPACE_ID"
+
+[[env.staging.unsafe.bindings]]
+name = "RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 120, period = 60 }
+
+[[env.staging.unsafe.bindings]]
+name = "RATE_LIMITER_RESOLVE"
+type = "ratelimit"
+namespace_id = "1002"
+simple = { limit = 60, period = 60 }
+
+[env.production]
+name = "nimbus-consent-broker"
+
+[env.production.vars]
+ENVIRONMENT = "production"
+MAX_REQUEST_BYTES = 16384
+AUTH_MAX_SKEW_S = 60
+NONCE_TTL_S = 300
+NF3_TRUST_ANCHORS = "{}"
+FALLBACK_RATE_LIMIT_PER_MIN = 120
+CLERK_ISSUER = "https://REPLACE.clerk.accounts.dev"
+CLERK_JWKS_URL = "https://REPLACE.clerk.accounts.dev/.well-known/jwks.json"
+CLERK_AUTHORIZED_PARTIES = ""
+OPERATOR_ID = "carnimbus-prod"
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "nimbus-broker"
+database_id = "REPLACE_WITH_YOUR_PRODUCTION_D1_DATABASE_ID"
+
+[[env.production.kv_namespaces]]
+binding = "CACHE"
+id = "REPLACE_WITH_YOUR_PRODUCTION_KV_NAMESPACE_ID"
+
+[[env.production.unsafe.bindings]]
+name = "RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 120, period = 60 }
+
+[[env.production.unsafe.bindings]]
+name = "RATE_LIMITER_RESOLVE"
+type = "ratelimit"
+namespace_id = "1002"
+simple = { limit = 60, period = 60 }

@@ -1,0 +1,156 @@
+{
+  "format": "nf5-vocabulary/1",
+  "note": "The closed NF-2 vocabulary as published. `non_transactable` entries have no grant type at all: they are not fields with a deny flag, and MUST NOT appear in `fields`.",
+  "fields": [
+    "aggregation_window_s",
+    "annual_mileage_estimate_km",
+    "body_class",
+    "charge_cycle_count",
+    "charge_rate_kw",
+    "drive_type",
+    "dtc_codes",
+    "dtc_first_seen_at",
+    "engine_configuration",
+    "engine_displacement_l",
+    "engine_hours",
+    "freeze_frame",
+    "fuel_type_primary",
+    "gvwr_class",
+    "harsh_accel_count",
+    "harsh_brake_count",
+    "harsh_corner_count",
+    "last_service_at",
+    "make",
+    "mil_status",
+    "model",
+    "model_year",
+    "obd_protocol",
+    "odometer_km",
+    "pack_temperature_c",
+    "plant_company_name",
+    "plant_country",
+    "readiness_monitors",
+    "recall_completion_status",
+    "repair_order_summaries",
+    "series",
+    "service_due_km",
+    "service_events",
+    "speed_mean_kph",
+    "speed_p95_kph",
+    "state_of_charge_pct",
+    "state_of_health_pct",
+    "trim",
+    "usable_capacity_kwh",
+    "vehicle_type"
+  ],
+  "field_classes": {
+    "build_specification": {
+      "layer": "vpic",
+      "fields": [
+        "body_class",
+        "drive_type",
+        "engine_configuration",
+        "engine_displacement_l",
+        "fuel_type_primary",
+        "gvwr_class",
+        "make",
+        "model",
+        "model_year",
+        "plant_company_name",
+        "plant_country",
+        "series",
+        "trim",
+        "vehicle_type"
+      ]
+    },
+    "diagnostics": {
+      "layer": "layer2",
+      "fields": [
+        "dtc_codes",
+        "dtc_first_seen_at",
+        "freeze_frame",
+        "mil_status",
+        "obd_protocol",
+        "readiness_monitors"
+      ]
+    },
+    "battery_health": {
+      "layer": "layer2",
+      "fields": [
+        "charge_cycle_count",
+        "charge_rate_kw",
+        "pack_temperature_c",
+        "state_of_charge_pct",
+        "state_of_health_pct",
+        "usable_capacity_kwh"
+      ]
+    },
+    "motion_aggregate": {
+      "layer": "layer2",
+      "fields": [
+        "aggregation_window_s",
+        "harsh_accel_count",
+        "harsh_brake_count",
+        "harsh_corner_count",
+        "speed_mean_kph",
+        "speed_p95_kph"
+      ]
+    },
+    "usage": {
+      "layer": "layer2",
+      "fields": [
+        "annual_mileage_estimate_km",
+        "engine_hours",
+        "odometer_km",
+        "service_due_km"
+      ]
+    },
+    "service_history": {
+      "layer": "operator",
+      "fields": [
+        "last_service_at",
+        "recall_completion_status",
+        "repair_order_summaries",
+        "service_events"
+      ]
+    }
+  },
+  "non_transactable": [
+    "biometric_identifier",
+    "coarse_geolocation",
+    "driver_face_template",
+    "driver_monitoring_video",
+    "fingerprint",
+    "geohash",
+    "gps_trace",
+    "in_cabin_audio",
+    "in_cabin_video",
+    "latitude",
+    "longitude",
+    "owner_address",
+    "owner_email",
+    "owner_name",
+    "owner_phone",
+    "precise_geolocation",
+    "raw_vin",
+    "voiceprint"
+  ],
+  "dppa_purposes": {
+    "dppa-2721b-2": "18 U.S.C. § 2721(b)(2)",
+    "dppa-2721b-3": "18 U.S.C. § 2721(b)(3)",
+    "dppa-2721b-5": "18 U.S.C. § 2721(b)(5)",
+    "dppa-2721b-6": "18 U.S.C. § 2721(b)(6)",
+    "dppa-2721b-11": "18 U.S.C. § 2721(b)(11)",
+    "dppa-2721b-13": "18 U.S.C. § 2721(b)(13)"
+  },
+  "counterparty_classes": [
+    "academic-research",
+    "dealer-licensed-ca",
+    "fleet-operator",
+    "insurer",
+    "municipal-agency",
+    "oem-warranty",
+    "repair-franchised",
+    "repair-independent"
+  ]
+}
